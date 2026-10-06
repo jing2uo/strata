@@ -38,8 +38,9 @@ def test_single_click_opens_a_directory(strata, mode):
 @SINGLE_CLICK
 @pytest.mark.preferences(browser_mode="columns", single_click_previews=False)
 @pytest.mark.parametrize("reveal_during_press", [False, True])
+@pytest.mark.parametrize("folder_name", ["pictures", "documents"])
 def test_single_click_opens_a_folder_in_a_clipped_parent_column(
-    strata, unreserved_columns, reveal_during_press,
+    strata, unreserved_columns, reveal_during_press, folder_name,
 ):
     browser_left = strata.pane().screen_bounds().x
     strata.fixture.populate({
@@ -50,7 +51,7 @@ def test_single_click_opens_a_folder_in_a_clipped_parent_column(
         strata.keyboard.press("Return")
         strata.wait_for_directory(name)
 
-    folder = strata.entry("pictures", directory=strata.fixture.root.name)
+    folder = strata.entry(folder_name, directory=strata.fixture.root.name)
     bounds = folder.screen_bounds()
     press_x, press_y = max(bounds.x, browser_left) + 12, bounds.center[1]
     strata.pointer.move_to(press_x, press_y)
@@ -71,9 +72,14 @@ def test_single_click_opens_a_folder_in_a_clipped_parent_column(
     finally:
         strata.pointer.connection.button(1, False)
 
-    strata.wait_for_directory("pictures")
-    strata.entry("diagram.txt", directory="pictures")
-    strata.wait_for_selection([], "pictures")
+    strata.wait_for_directory(folder_name)
+    strata.wait(
+        lambda: strata.pane_names() == [strata.fixture.root.name, folder_name],
+        "the clicked folder to become the final column, closing deeper descendants",
+    )
+    child = "Level 2" if folder_name == "documents" else "diagram.txt"
+    strata.entry(child, directory=folder_name)
+    strata.wait_for_selection(["Level 2"] if folder_name == "documents" else [], folder_name)
 
 
 @SINGLE_CLICK
