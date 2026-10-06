@@ -373,8 +373,12 @@ impl ModeViews {
             } => {
                 if let Some(tree) = self.tree_for_depth(*depth) {
                     match selection {
-                        SelectionUpdate::All => tree.sync_root_selection(&self.browser.selected_positions(*depth)),
-                        SelectionUpdate::Positions(positions) => tree.sync_root_selection(positions),
+                        SelectionUpdate::All => {
+                            tree.sync_root_selection(&self.browser.selected_positions(*depth))
+                        }
+                        SelectionUpdate::Positions(positions) => {
+                            tree.sync_root_selection(positions)
+                        }
                     }
                     if *take_focus
                         && let Some(position) = self.browser.selected_positions(*depth).first()

@@ -1827,7 +1827,8 @@ fn update_item_count(
                 label,
                 Some(&format!(
                     "{} of {} {noun} selected. Size includes selected files only; folder contents are not counted.",
-                    selected.len(), counts.total
+                    selected.len(),
+                    counts.total
                 )),
             );
         }

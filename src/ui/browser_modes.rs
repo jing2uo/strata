@@ -473,15 +473,6 @@ impl ModeViews {
         let tree_click_activation =
             Rc::new(Cell::new(ClickActivation::default_for(BrowserMode::Tree)));
         let clipboard_marks = Rc::new(RefCell::new(ClipboardMarks::new()));
-        let tree_pane = tree::TreePane::new(
-            &browser,
-            source.clone(),
-            single_click_previews.clone(),
-            tree_click_activation.clone(),
-            clipboard_marks.clone(),
-        );
-        tree_page.append(&tree_pane.widget());
-
         Self {
             stack,
             icons_root,
@@ -489,7 +480,7 @@ impl ModeViews {
             tree_page,
             icons_panes: Vec::new(),
             list_pane: None,
-            tree_pane: Some(tree_pane),
+            tree_pane: None,
             list_navigation: RefCell::new(navigation::ListNavigation::default()),
             browser,
             source,
@@ -1460,6 +1451,9 @@ impl ModeViews {
     }
 
     fn prepare_tree(&mut self) {
+        if self.tree_pane.is_none() {
+            self.recreate_tree_pane();
+        }
         if let Some(state) = self.context_state.borrow().as_ref().and_then(Weak::upgrade)
             && let Some(tree) = self.tree_pane.as_ref()
         {

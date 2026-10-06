@@ -1921,7 +1921,10 @@ impl BrowserView {
     /// Tree selection without cursor fallback, for status counts.
     pub(in crate::ui) fn tree_selected_entries(&self) -> Option<Vec<FileEntry>> {
         let views = self.state.mode_views.try_borrow().ok()?;
-        views.is_tree_active().then(|| views.tree_selected_entries()).flatten()
+        views
+            .is_tree_active()
+            .then(|| views.tree_selected_entries())
+            .flatten()
     }
 
     /// Paste/create destination: the focused folder itself, else its parent.
