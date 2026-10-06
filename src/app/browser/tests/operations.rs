@@ -29,6 +29,9 @@ fn deleted_trash_entries_refresh_the_trash_root() {
 
 #[test]
 fn trailing_slash_converts_only_empty_files_to_directories() {
+    let _serial = crate::test_support::ASYNC_MAIN_CONTEXT_DEFAULT
+        .lock()
+        .expect("async test lock");
     fn entry_at(path: &str, kind: EntryKind, size: MetadataValue<u64>) -> FileEntry {
         FileEntry {
             location: Location::local(path),
@@ -100,11 +103,17 @@ fn trailing_slash_converts_only_empty_files_to_directories() {
         "unknown",
         true
     ));
+    while browser.last_started_operation() != Some(OperationRequestId(4)) {
+        glib::MainContext::default().iteration(true);
+    }
     assert_eq!(std::fs::read(&full_path).expect("preserved"), b"keep");
 }
 
 #[test]
 fn conversion_ignores_unrelated_deletions_and_failed_own_request() {
+    let _serial = crate::test_support::ASYNC_MAIN_CONTEXT_DEFAULT
+        .lock()
+        .expect("async test lock");
     let root = tempfile::tempdir().expect("fixture");
     let path = root.path().join("empty");
     std::fs::write(&path, []).expect("empty file");
