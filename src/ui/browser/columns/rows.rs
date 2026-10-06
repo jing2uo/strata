@@ -141,6 +141,7 @@ pub(super) fn column_rows(
             pending_activation_for_unmap.take();
         });
         let was_selected = Rc::new(Cell::new(false));
+        let press_origin = Rc::new(Cell::new((0.0, 0.0)));
         let mut content_drag: Option<gtk::DragSource> = None;
         if weak_state.upgrade().is_some_and(|state| state.interactive) {
             let drag = gtk::DragSource::builder()
@@ -155,8 +156,23 @@ pub(super) fn column_rows(
             let search_results_for_drag = search_results_for_factory.clone();
             let selection_for_drag = selection_for_rows.clone();
             let was_selected_for_drag = was_selected.clone();
+            let press_origin_for_drag = press_origin.clone();
             drag.connect_prepare(move |source, x, y| {
                 let prepare_row = prepare_row.upgrade()?;
+                // GtkDragSource also counts camera movement in its widget-relative threshold.
+                if source
+                    .current_event()
+                    .and_then(|event| event.position())
+                    .is_some_and(|point| {
+                        !crate::ui::pointer::exceeds_drag_threshold(
+                            press_origin_for_drag.get(),
+                            point,
+                            prepare_row.settings().gtk_dnd_drag_threshold(),
+                        )
+                    })
+                {
+                    return None;
+                }
                 if prepare_row
                     .pick(x, y, gtk::PickFlags::DEFAULT)
                     .is_some_and(|target| crate::ui::focus_navigation::editable(&target))
@@ -383,7 +399,6 @@ pub(super) fn column_rows(
         let press_moved_for_press = press_moved.clone();
         let press_moved_for_update = press_moved.clone();
         let press_moved_for_release = press_moved.clone();
-        let press_origin = Rc::new(Cell::new((0.0, 0.0)));
         let press_origin_for_press = press_origin.clone();
         let press_origin_for_update = press_origin.clone();
         let rename_position = Rc::new(Cell::new(None::<usize>));
@@ -450,7 +465,8 @@ pub(super) fn column_rows(
                         shift,
                         preserve_group,
                     )
-                    && !state.browser.is_open_child(depth, &entry.location);
+                    && (!state.browser.is_open_child(depth, &entry.location)
+                        || state.browser.location_at(depth + 2).is_some());
                 let location_hold = (!search_active_for_click.get()
                     && entry.is_directory()
                     && (activate || (filtered && press_count == 1 && !control && !shift)))
@@ -671,7 +687,14 @@ pub(super) fn column_rows(
                             state.browser.preview(depth, pending.position);
                         }
                     } else {
-                        let activate = || state.browser.activate(depth, pending.position);
+                        let activate = || {
+                            if state.browser.is_open_child(depth, &pending.location) {
+                                // Keep the clicked folder open, not its deeper descendants.
+                                state.browser.close_column(depth + 2);
+                            } else {
+                                state.browser.activate(depth, pending.position);
+                            }
+                        };
                         if let Some(hold) = pending.location_hold.take() {
                             hold.navigate(depth, activate);
                         } else {
