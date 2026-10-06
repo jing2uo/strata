@@ -885,11 +885,14 @@ impl NavigationState {
         }
         column.selected = if selected_was_removed {
             if replace_selection && !column.entries.is_empty() {
-                let position = retained_before_selected.min(column.entries.len() - 1);
-                column
-                    .selected_locations
-                    .insert(column.entries[position].location.clone());
-                Some(position)
+                let position =
+                    nearest_visible_neighbor(column, retained_before_selected);
+                if let Some(position) = position {
+                    column
+                        .selected_locations
+                        .insert(column.entries[position].location.clone());
+                }
+                position
             } else {
                 None
             }
@@ -961,9 +964,8 @@ impl NavigationState {
                 remove_monitored_entry(&mut column.entries, &location, &mut splices);
                 if selected_was_removed && replace_selection {
                     selected_location = removed_position.and_then(|position| {
-                        column
-                            .entries
-                            .get(position.min(column.entries.len().saturating_sub(1)))
+                        nearest_visible_neighbor(column, position)
+                            .and_then(|index| column.entries.get(index))
                             .map(|entry| entry.location.clone())
                     });
                     if !self.preserve_fill_on_removal
@@ -2258,6 +2260,18 @@ fn visible_positions(column: &ColumnState) -> Vec<usize> {
         .filter(|(_, entry)| show_hidden || !entry.is_hidden)
         .map(|(position, _)| position)
         .collect()
+}
+
+/// Nearest visible entry at or after `position`, else the nearest one before
+/// it. Removals must use this instead of clamping the stale index, or focus
+/// and preview land on a hidden neighbor while hidden files are off.
+fn nearest_visible_neighbor(column: &ColumnState, position: usize) -> Option<usize> {
+    let visible = visible_positions(column);
+    visible
+        .iter()
+        .copied()
+        .find(|&index| index >= position)
+        .or_else(|| visible.last().copied())
 }
 
 fn selected_position_list(column: &ColumnState) -> Vec<usize> {
