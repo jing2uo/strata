@@ -141,7 +141,10 @@ impl BrowserView {
     }
 
     pub fn confirm_targets_delete(&self, permanent: bool) -> bool {
-        let entries = self.command_targets();
+        let mut entries = self.command_targets();
+        if entries.is_empty() {
+            entries = self.state.browser.deletion_entries();
+        }
         if entries.is_empty() {
             return false;
         }
