@@ -542,9 +542,7 @@ fn removing_the_selected_entry_focuses_its_nearest_neighbor() {
 #[test]
 fn removing_the_selected_entry_skips_hidden_neighbors() {
     for batch in [false, true] {
-        let remove = |state: &mut NavigationState,
-                      watched: &Location,
-                      target: Location| {
+        let remove = |state: &mut NavigationState, watched: &Location, target: Location| {
             if batch {
                 state
                     .apply_removals_batch(0, watched, [target])

@@ -885,8 +885,7 @@ impl NavigationState {
         }
         column.selected = if selected_was_removed {
             if replace_selection && !column.entries.is_empty() {
-                let position =
-                    nearest_visible_neighbor(column, retained_before_selected);
+                let position = nearest_visible_neighbor(column, retained_before_selected);
                 if let Some(position) = position {
                     column
                         .selected_locations
