@@ -67,13 +67,14 @@ mod trash;
 
 #[cfg(test)]
 pub(super) use crate::ui::browser::clipboard::clipboard_mark;
-pub(in crate::ui) use crate::ui::browser::clipboard::drag_icon_with_count;
+pub(in crate::ui) use crate::ui::browser::clipboard::drag_preview_icon;
 pub(super) use crate::ui::browser::clipboard::{
     ClipboardMark, ClipboardMarks, file_drag_content, mark_in, set_mark_result_style,
 };
 pub(crate) use crate::ui::browser::clipboard::{
-    PreparedFileDrop, drag_actions_for_modifiers, file_drop_action, file_drop_commit,
-    locations_from_file_list_value, prepare_file_drop_target,
+    PreparedFileDrop, arm_spring_load_navigation, drag_actions_for_modifiers,
+    file_drag_hover_target, file_drop_action, file_drop_commit, locations_from_file_list_value,
+    prepare_file_drop_target,
 };
 pub(crate) use crate::ui::browser::collection::{
     ActivePaneFilter, bind_listing_filter, detach_collection_view, filter_placeholder,
@@ -239,10 +240,8 @@ pub(super) struct ViewState {
     print_handler: RefCell<Option<PrintHandler>>,
     search_selection_handlers: RefCell<Vec<Rc<dyn Fn()>>>,
     pending_select: RefCell<Vec<String>>,
+    pending_properties: RefCell<Option<Location>>,
     pending_location_selection: RefCell<Option<(Location, Vec<Location>)>>,
-    /// Set when the pending selection came from a properties request, so the
-    /// dialog opens once the entry it describes is actually loaded.
-    pending_select_properties: Cell<bool>,
     pending_extract_retry: RefCell<Option<(FileEntry, Location)>>,
     extract_destination: RefCell<Option<Location>>,
     pending_archive_destination: RefCell<Option<Location>>,
@@ -251,8 +250,10 @@ pub(super) struct ViewState {
     /// failed only because the location doesn't support Trash can offer a
     /// permanent-delete retry for exactly those entries.
     pending_delete_entries: RefCell<Vec<FileEntry>>,
+    pending_file_operation_animation: RefCell<Option<fly_to_trash::PreparedFlight>>,
     /// Visible permanent-delete rows captured before the operation mutates the model.
     pending_delete_dissolve: RefCell<Option<(usize, dissolve_delete::PreparedDissolve)>>,
+    delete_dissolve_request: Cell<Option<crate::services::OperationRequestId>>,
     deferred_delete_empty_depth: Cell<Option<usize>>,
     pending_navigate: RefCell<Option<Location>>,
     pending_location_credentials: RefCell<Option<MountCredentials>>,
@@ -261,7 +262,8 @@ pub(super) struct ViewState {
     trash_loading: RefCell<Option<TrashLoadingView>>,
     unlock_slots: RefCell<Vec<UnlockProgressSlot>>,
     auto_refresh: RefCell<Option<glib::SourceId>>,
-    trash_button: RefCell<Option<gtk::Button>>,
+    trash_button: glib::WeakRef<gtk::Button>,
+    recent_removal: crate::adapters::RecentRemovalState,
     drag_autoscroll: RefCell<Option<Rc<columns::drag_scroll::DragAutoscroll>>>,
     drag_source_depth: Cell<Option<usize>>,
     suppress_scroll_after_drop: Cell<bool>,
@@ -625,13 +627,15 @@ impl BrowserView {
             print_handler: RefCell::new(None),
             search_selection_handlers: RefCell::new(Vec::new()),
             pending_select: RefCell::new(Vec::new()),
+            pending_properties: RefCell::new(None),
             pending_location_selection: RefCell::new(None),
-            pending_select_properties: Cell::new(false),
             pending_extract_retry: RefCell::new(None),
             extract_destination: RefCell::new(None),
             pending_archive_destination: RefCell::new(None),
             pending_delete_entries: RefCell::new(Vec::new()),
+            pending_file_operation_animation: RefCell::new(None),
             pending_delete_dissolve: RefCell::new(None),
+            delete_dissolve_request: Cell::new(None),
             deferred_delete_empty_depth: Cell::new(None),
             pending_navigate: RefCell::new(None),
             pending_location_credentials: RefCell::new(None),
@@ -640,7 +644,8 @@ impl BrowserView {
             trash_loading: RefCell::new(None),
             unlock_slots: RefCell::new(Vec::new()),
             auto_refresh: RefCell::new(None),
-            trash_button: RefCell::new(None),
+            trash_button: glib::WeakRef::new(),
+            recent_removal: crate::adapters::RecentRemovalState::new(),
             drag_autoscroll: RefCell::new(None),
             drag_source_depth: Cell::new(None),
             suppress_scroll_after_drop: Cell::new(false),
@@ -832,6 +837,7 @@ impl BrowserView {
         self.state.browser.finish_navigation_cleanup();
     }
 
+    #[cfg(test)]
     pub(crate) fn connect_navigation_cleanup(&self, window: &gtk::Window) {
         let weak = self.downgrade();
         window.connect_close_request(move |_| {
@@ -870,35 +876,19 @@ impl BrowserView {
         self.state.commit_file_drop(destination, sources, commit);
     }
 
-    /// Selects `names` in the active column once it finishes loading,
-    /// optionally opening the properties dialog for the focused one.
-    pub fn select_after_load(&self, names: Vec<String>, properties: bool) {
-        self.state.pending_select.borrow_mut().extend(names);
-        self.state.pending_select_properties.set(properties);
+    pub(crate) fn reveal_location(&self, location: Location) {
+        if let Some(parent) = location.parent() {
+            self.state.reveal_locations(parent, vec![location], false);
+        }
     }
 
-    pub(super) fn reveal_location(&self, location: Location) {
-        let Some(parent) = location.parent() else {
-            return;
-        };
-        self.state.pending_archive_destination.take();
-        self.state.pending_navigate.take();
-        self.state.pending_select.take();
-        self.state.pending_select_properties.set(false);
-        self.state
-            .pending_location_selection
-            .replace(Some((parent.clone(), vec![location])));
-        if self.state.browser.active_location().as_ref() == Some(&parent) {
-            if let Some(depth) = self.state.browser.active_depth() {
-                if let Some(column) = self.state.columns.borrow().get(depth) {
-                    column.filter_entry.set_text("");
-                }
-                self.state.mode_views.borrow().clear_filter(depth);
-            }
-            self.state.browser.reload_active();
-        } else {
-            self.state.browser.navigate_location(parent, false);
-        }
+    pub(crate) fn reveal_locations(
+        &self,
+        directory: Location,
+        targets: Vec<Location>,
+        properties: bool,
+    ) {
+        self.state.reveal_locations(directory, targets, properties);
     }
 
     pub(super) fn refresh_source_filter(&self) {
@@ -942,7 +932,7 @@ impl BrowserView {
     }
 
     pub fn set_trash_button(&self, button: gtk::Button) {
-        self.state.trash_button.replace(Some(button));
+        self.state.trash_button.set(Some(&button));
     }
 
     pub fn begin_rename(&self) -> bool {
@@ -1055,6 +1045,10 @@ impl BrowserView {
             let (positions, focused) = tree.export_root_selection();
             let focused = focused.or_else(|| positions.last().copied());
             self.state.browser.set_selection(0, &positions, focused);
+        }
+        if mode == BrowserMode::Columns {
+            self.state.cancel_peek();
+            self.state.peek_anchor.take();
         }
         // The rebuilt view has a different displayed order for the same anchor.
         self.state.browser.leave_visual();
@@ -1565,7 +1559,11 @@ impl BrowserView {
             let selected = self.tree_command_entries().unwrap_or_default();
             return paste_destination(&selected, self.tree_destination(), false);
         }
-        let selected = self.state.browser.selected_entries();
+        let selected = if self.state.browser.selected_count() == 1 {
+            self.state.browser.selected_entries()
+        } else {
+            Vec::new()
+        };
         let column = self
             .state
             .destination_depth()
@@ -1922,10 +1920,8 @@ impl BrowserView {
 
     /// Tree selection without cursor fallback, for status counts.
     pub(in crate::ui) fn tree_selected_entries(&self) -> Option<Vec<FileEntry>> {
-        if !self.in_tree_mode() {
-            return None;
-        }
-        self.state.mode_views.borrow().tree_selected_entries()
+        let views = self.state.mode_views.try_borrow().ok()?;
+        views.is_tree_active().then(|| views.tree_selected_entries()).flatten()
     }
 
     /// Paste/create destination: the focused folder itself, else its parent.
@@ -2012,7 +2008,10 @@ impl BrowserView {
         } else if let Some(entries) = self.tree_command_entries() {
             entries
         } else if self.view_mode() == BrowserMode::Columns {
-            self.state.browser.selected_entries()
+            self.focused_listing_depth()
+                .map(|depth| self.state.browser.command_entries(depth))
+                .filter(|entries| !entries.is_empty())
+                .unwrap_or_else(|| self.state.browser.deletion_entries())
         } else {
             self.state.browser.deletion_entries()
         };
@@ -2087,21 +2086,22 @@ impl BrowserView {
                         image_dimensions: crate::model::MetadataValue::Unknown,
                         child_count: crate::model::MetadataValue::Unknown,
                         duration_seconds: crate::model::MetadataValue::Unknown,
+                        recent_uri: None,
                     }
                 })
                 .collect()
         };
-        let trash_button = self.state.trash_button.borrow().clone();
+        let source = self.state.delete_animation_source();
+        let trash_button = self.state.trash_button.upgrade();
+        let animation = source.zip(trash_button).and_then(|(source, trash_button)| {
+            fly_to_trash::prepare_fly_from_trash(&source, entries.iter(), &trash_button)
+        });
+        self.state
+            .pending_file_operation_animation
+            .replace(animation);
         let undone = self.state.browser.undo_last_trash();
-        if undone
-            && let Some(trash_button) = trash_button
-            && !entries.is_empty()
-        {
-            let source = self
-                .state
-                .delete_animation_source()
-                .unwrap_or_else(|| self.state.overlay.clone().upcast());
-            fly_to_trash::fly_from_trash(&source, &entries, &trash_button, || {});
+        if !undone {
+            self.state.pending_file_operation_animation.take();
         }
         undone
     }

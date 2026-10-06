@@ -1813,11 +1813,29 @@ fn update_item_count(
         return;
     };
     let counts = browser.column_entry_counts(depth).unwrap_or_default();
-    let selected: Vec<crate::model::FileEntry> = match tree_selected {
-        Some(selected) => selected.to_vec(),
-        None => browser.selected_entries(),
-    };
-    if tree_selected.is_none() {
+    if let Some(selected) = tree_selected {
+        let noun = if counts.total == 1 { "item" } else { "items" };
+        if selected.is_empty() {
+            label.set_label(&format!("{} {noun}", counts.total));
+            crate::ui::accessibility::set_description(
+                label,
+                Some(&file_folder_breakdown(counts.files, counts.folders)),
+            );
+        } else {
+            label.set_label(&selection_details(selected));
+            crate::ui::accessibility::set_description(
+                label,
+                Some(&format!(
+                    "{} of {} {noun} selected. Size includes selected files only; folder contents are not counted.",
+                    selected.len(), counts.total
+                )),
+            );
+        }
+        label.set_visible(true);
+        return;
+    }
+    let selected_len = browser.selected_count();
+    if selected_len > 0 && selected_len <= 64 {
         for position in browser.selected_positions(depth) {
             if let Some(entry) = browser.entry_at(depth, position)
                 && !entry.is_directory()
@@ -1828,14 +1846,36 @@ fn update_item_count(
         }
     }
     let noun = if counts.total == 1 { "item" } else { "items" };
-    if !selected.is_empty() {
-        label.set_label(&selection_details(&selected));
+    if selected_len > 0 {
+        if counts.total > 0 && selected_len == counts.total {
+            let folders = counts.folders;
+            let files = counts.files;
+            let mut parts = Vec::new();
+            if folders > 0 {
+                let noun = if folders == 1 { "folder" } else { "folders" };
+                parts.push(format!("{folders} {noun}"));
+            }
+            if files > 0 {
+                let noun = if files == 1 { "file" } else { "files" };
+                parts.push(format!("{files} {noun}"));
+            }
+            let text = if parts.is_empty() {
+                format!("{selected_len} {noun} selected")
+            } else {
+                format!("{} selected", parts.join(", "))
+            };
+            label.set_label(&text);
+        } else if selected_len > 64 {
+            label.set_label(&format!("{selected_len} {noun} selected"));
+        } else {
+            let selected = browser.selected_entries();
+            label.set_label(&selection_details(&selected));
+        }
         crate::ui::accessibility::set_description(
             label,
             Some(&format!(
                 "{} of {} {noun} selected. Size includes selected files only; folder contents are not counted.",
-                selected.len(),
-                counts.total
+                selected_len, counts.total
             )),
         );
     } else {
