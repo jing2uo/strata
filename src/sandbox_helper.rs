@@ -559,10 +559,39 @@ fn render_pixbuf(path: &Path, size: i32) -> Result<Vec<u8>, String> {
     {
         return Err("Image dimensions exceed the decoded frame budget".to_owned());
     }
-    gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true)
+    match gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true) {
+        Ok(pixbuf) => pixbuf
+            .save_to_bufferv("png", &[("compression", "1")])
+            .map_err(|error| error.to_string()),
+        // GDK Pixbuf 2.44 can hand every raster format to glycin, whose nested
+        // sandbox cannot start inside this one; decode common formats in-process.
+        Err(error) => render_common_raster(path, size).map_err(|_| error.to_string()),
+    }
+}
+
+fn render_common_raster(path: &Path, size: i32) -> Result<Vec<u8>, String> {
+    use image::ImageDecoder;
+
+    let size = u32::try_from(size).map_err(|error| error.to_string())?;
+    let mut decoder = image::ImageReader::open(path)
+        .and_then(image::ImageReader::with_guessed_format)
         .map_err(|error| error.to_string())?
-        .save_to_bufferv("png", &[("compression", "1")])
-        .map_err(|error| error.to_string())
+        .into_decoder()
+        .map_err(|error| error.to_string())?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut image =
+        image::DynamicImage::from_decoder(decoder).map_err(|error| error.to_string())?;
+    image.apply_orientation(orientation);
+    if image.width() > size || image.height() > size {
+        image = image.thumbnail(size, size);
+    }
+    let mut png = Vec::new();
+    image
+        .write_to(&mut io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|error| error.to_string())?;
+    Ok(png)
 }
 
 fn render_raw(path: &Path, size: i32) -> Result<Vec<u8>, String> {

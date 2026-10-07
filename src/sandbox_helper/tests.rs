@@ -20,8 +20,8 @@ use gdk_pixbuf::prelude::*;
 use super::{
     bounded_output, bounded_output_with_timeout, bounded_surface_dimensions,
     exceeds_decoded_frame_budget, is_svg_head, pdf_render_request, read_exif_thumbnail,
-    read_limited, render_pixbuf, render_raw, render_raw_thumbnail, render_simple_dcraw, run,
-    scale_embedded_thumbnail, svg_source,
+    read_limited, render_common_raster, render_pixbuf, render_raw, render_raw_thumbnail,
+    render_simple_dcraw, run, scale_embedded_thumbnail, svg_source,
 };
 
 #[test]
@@ -151,6 +151,24 @@ fn image_previews_preserve_small_sources_and_bound_large_decodes() {
         loader.close().expect("finish preview");
         let preview = loader.pixbuf().expect("decoded preview");
         assert_eq!((preview.width(), preview.height()), expected);
+    }
+}
+
+#[test]
+fn common_raster_fallback_decodes_without_gdk_pixbuf_loaders() {
+    let directory = tempfile::tempdir().expect("image fixture");
+    for (name, format) in [
+        ("image.png", image::ImageFormat::Png),
+        ("image.jpg", image::ImageFormat::Jpeg),
+    ] {
+        let path = directory.path().join(name);
+        image::RgbImage::from_pixel(1200, 600, image::Rgb([51, 102, 153]))
+            .save_with_format(&path, format)
+            .expect("save source");
+        let png = render_common_raster(&path, 800).expect("render fallback preview");
+        let preview = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
+            .expect("decoded preview");
+        assert_eq!((preview.width(), preview.height()), (800, 400));
     }
 }
 
