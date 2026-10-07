@@ -388,7 +388,8 @@ fn tenxer_delete_confirms_trash_and_permanent_deletion() {
                         .is_some_and(|confirm| confirm.has_focus()),
                     "the size summary must keep focus on Permanently delete"
                 );
-                close_modal(&fixture);
+                assert!(modal_key(&fixture, Key::Escape));
+                wait_until(|| !modal_visible(&fixture.overlay));
                 assert!(directory.join("b.txt").exists(), "{key:?} cancel keeps it");
             }
             move_to_named(&fixture, &browser, "b.txt");
@@ -409,9 +410,9 @@ fn tenxer_delete_confirms_trash_and_permanent_deletion() {
             shifted(&fixture, Key::D);
             wait_until(|| {
                 widget_with_class(fixture.overlay.upcast_ref(), "action-dialog-confirm")
-                    .is_some_and(|confirm| confirm.is_sensitive())
+                    .is_some_and(|confirm| confirm.is_sensitive() && confirm.has_focus())
             });
-            assert!(click_class(&fixture.overlay, "action-dialog-confirm"));
+            assert!(modal_key(&fixture, Key::Return));
             wait_until(|| !directory.join("b.txt").exists());
             assert_eq!(directory_names(&directory), ["a.txt", "c.txt"]);
 
@@ -525,6 +526,53 @@ fn tenxer_delete_targets_the_open_folder_when_the_child_selects_nothing() {
             assert!(click_class(&fixture.overlay, "action-dialog-confirm"));
             wait_until(|| !directory.join("folder").exists());
             assert_eq!(directory_names(&directory), ["a.txt", "b.txt", "c.txt"]);
+        },
+    );
+}
+
+#[test]
+fn tenxer_delete_with_no_search_or_filter_hits_preserves_the_open_folder() {
+    crate::test_support::gtk_test(
+        "ui::window::tests::keyboard_dispatch::file_commands::tenxer_delete_with_no_search_or_filter_hits_preserves_the_open_folder",
+        || {
+            let fixture = KeyboardFixture::new();
+            enable_tenxer(&fixture);
+            let directory = fixture._directory.path().to_path_buf();
+            let folder = directory.join("folder");
+            std::fs::create_dir(&folder).expect("fixture folder");
+            let browser = fixture.view.browser();
+            browser.refresh_all();
+            wait_until(|| rendered_name(&fixture.view.widget(), "folder"));
+            enter_folder(&fixture, "folder");
+
+            for search in [false, true] {
+                if search {
+                    fixture.view.commit_listing_search("no-match");
+                } else {
+                    fixture.view.commit_listing_filter("no-match");
+                }
+                wait_until(|| fixture.view.selected_search_results() == Some(Vec::new()));
+                focus_files(&fixture);
+                for (key, modifiers) in [
+                    (Key::d, ModifierType::empty()),
+                    (Key::D, ModifierType::SHIFT_MASK),
+                ] {
+                    assert!(fixture.press(key, modifiers));
+                    assert_eq!(feedback(&fixture), "Nothing to delete");
+                    assert!(!modal_visible(&fixture.overlay));
+                    assert!(folder.is_dir());
+                    assert_eq!(
+                        directory_names(&directory),
+                        ["a.txt", "b.txt", "c.txt", "folder"]
+                    );
+                }
+                if search {
+                    assert!(fixture.view.dismiss_listing_search());
+                } else {
+                    assert!(fixture.view.clear_listing_filter());
+                }
+                focus_files(&fixture);
+            }
         },
     );
 }
