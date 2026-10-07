@@ -724,6 +724,12 @@ fn runtime_command(bwrap: &Path, needs_media_libraries: bool) -> Command {
         "/etc/ImageMagick-6",
         "/etc/ImageMagick-6",
     ]);
+    // Debian-family ImageMagick commands are alternatives links; without
+    // these the fallback commands dangle inside the sandbox.
+    for tool in ["magick", "convert"] {
+        let path = format!("/etc/alternatives/{tool}");
+        command.arg("--ro-bind-try").arg(&path).arg(&path);
+    }
     if let Some(loaders) = option_env!("STRATA_SANDBOX_GDK_PIXBUF_MODULE_FILE") {
         command.args(["--setenv", "GDK_PIXBUF_MODULE_FILE", loaders]);
     }
