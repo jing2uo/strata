@@ -171,12 +171,9 @@ impl TabWindow {
         self.tabs.borrow_mut().push(tab);
         self.strip.add(self, id, &content.browser);
         let weak = Rc::downgrade(self);
-        let browser = content.browser.downgrade();
-        content.browser.browser().observe(move |_| {
-            if let (Some(state), Some(browser)) = (weak.upgrade(), browser.upgrade()) {
-                state
-                    .strip
-                    .label(id, &tab_label(browser.browser().active_location().as_ref()));
+        content.browser.observe_tab_location(move |location| {
+            if let Some(state) = weak.upgrade() {
+                state.strip.label(id, &tab_label(location));
             }
         });
         if id == 1 {
@@ -374,6 +371,21 @@ impl TabWindow {
         self.strip.hints(self.hints.get());
     }
 
+    fn move_active_tab(&self, delta: i32) {
+        let tabs = self.tabs.borrow();
+        let Some(current) = tabs.iter().position(|tab| tab.id == self.active.get()) else {
+            return;
+        };
+        let target = current
+            .checked_add_signed(delta as isize)
+            .and_then(|index| tabs.get(index))
+            .map(|tab| tab.id);
+        drop(tabs);
+        if let Some(target) = target {
+            self.reorder(self.active.get(), target);
+        }
+    }
+
     fn show_hints(&self, show: bool) {
         if self.hints.replace(show) != show {
             self.strip.hints(show);
@@ -386,7 +398,13 @@ impl TabWindow {
         modifiers: gdk::ModifierType,
     ) -> glib::Propagation {
         use gdk::{Key, ModifierType as M};
-        let mods = modifiers & (M::CONTROL_MASK | M::SHIFT_MASK | M::ALT_MASK | M::SUPER_MASK);
+        let mods = modifiers
+            & (M::CONTROL_MASK
+                | M::SHIFT_MASK
+                | M::ALT_MASK
+                | M::SUPER_MASK
+                | M::META_MASK
+                | M::HYPER_MASK);
         let ctrl_shift = M::CONTROL_MASK | M::SHIFT_MASK;
         let held = mods
             | match key {
@@ -403,10 +421,18 @@ impl TabWindow {
             self.new_tab();
         } else if mods == M::CONTROL_MASK && matches!(key, Key::w | Key::W) {
             self.close(self.active.get());
-        } else if mods == M::CONTROL_MASK && key == Key::Tab {
+        } else if mods == M::CONTROL_MASK
+            && matches!(key, Key::Tab | Key::Page_Down | Key::KP_Page_Down)
+        {
             self.cycle(1);
-        } else if mods == ctrl_shift && matches!(key, Key::Tab | Key::ISO_Left_Tab) {
+        } else if (mods == M::CONTROL_MASK && matches!(key, Key::Page_Up | Key::KP_Page_Up))
+            || (mods == ctrl_shift && matches!(key, Key::Tab | Key::ISO_Left_Tab))
+        {
             self.cycle(-1);
+        } else if mods == ctrl_shift
+            && let Some(delta) = super::super::page_direction(key)
+        {
+            self.move_active_tab(delta);
         } else if mods == ctrl_shift
             && let Some(index) = tab_index(key)
         {
@@ -454,10 +480,30 @@ fn operations_active(window: &gtk::ApplicationWindow) {
 
 pub(in crate::ui::window) fn is_tab_shortcut(key: gdk::Key, modifiers: gdk::ModifierType) -> bool {
     use gdk::{Key, ModifierType as M};
-    let mods = modifiers & (M::CONTROL_MASK | M::SHIFT_MASK | M::ALT_MASK | M::SUPER_MASK);
-    (mods == M::CONTROL_MASK && matches!(key, Key::t | Key::T | Key::w | Key::W | Key::Tab))
+    let mods = modifiers
+        & (M::CONTROL_MASK
+            | M::SHIFT_MASK
+            | M::ALT_MASK
+            | M::SUPER_MASK
+            | M::META_MASK
+            | M::HYPER_MASK);
+    (mods == M::CONTROL_MASK
+        && matches!(
+            key,
+            Key::t
+                | Key::T
+                | Key::w
+                | Key::W
+                | Key::Tab
+                | Key::Page_Up
+                | Key::KP_Page_Up
+                | Key::Page_Down
+                | Key::KP_Page_Down
+        ))
         || (mods == (M::CONTROL_MASK | M::SHIFT_MASK)
-            && (matches!(key, Key::Tab | Key::ISO_Left_Tab) || tab_index(key).is_some()))
+            && (matches!(key, Key::Tab | Key::ISO_Left_Tab)
+                || super::super::page_direction(key).is_some()
+                || tab_index(key).is_some()))
 }
 
 pub(in crate::ui::window) fn tab_index(key: gdk::Key) -> Option<usize> {

@@ -12,6 +12,10 @@ The destination column has an accent rule across its header, including when the 
 
 In regular and 10xer modes, **Ctrl+T** opens a tab at the active location,
 **Ctrl+W** closes the active tab, and **Ctrl+Tab / Ctrl+Shift+Tab** cycles tabs.
+**Ctrl+Page Up / Ctrl+Page Down** selects the previous / next tab in strip order,
+wrapping at either end, like the tab shortcuts in web browsers.
+**Ctrl+Shift+Page Up / Ctrl+Shift+Page Down** moves the active tab one position
+left / right without switching tabs. Reordering stops at either end of the strip.
 Hold **Ctrl+Shift** to display numbers beside the first ten labels; press
 **Ctrl+Shift+1–9** to select tabs 1–9 or **Ctrl+Shift+0** for tab 10.
 In 10xer mode, **t**, then **n** creates a tab, **t**, then **x** closes it,
@@ -24,6 +28,10 @@ Each tab retains its location, selection, navigation history, preview and search
 state. Tabs are in-memory only. Appearance preferences and the clipboard remain
 shared. File operations prevent closing their tab or window until they finish
 or are cancelled.
+
+Tab names follow the active directory, not a child column shown only as a keyboard
+preview. A pending single-click folder activation keeps the previous tab name until
+navigation resolves; cancelled clicks and drags restore normal focus-based naming.
 
 The Material-style strip appears when there is more than one tab. The plus and
 window-close controls move into it and return to the normal header when only

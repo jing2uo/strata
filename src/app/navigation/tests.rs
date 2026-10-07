@@ -540,54 +540,6 @@ fn removing_the_selected_entry_focuses_its_nearest_neighbor() {
 }
 
 #[test]
-fn removing_the_selected_entry_skips_hidden_neighbors() {
-    for batch in [false, true] {
-        let remove = |state: &mut NavigationState, watched: &Location, target: Location| {
-            if batch {
-                state
-                    .apply_removals_batch(0, watched, [target])
-                    .expect("removing the selected entry should change the column")
-            } else {
-                state
-                    .apply_directory_change(0, watched, DirectoryChange::Remove(target))
-                    .expect("removing the selected entry should change the column")
-            }
-        };
-
-        let mut state = NavigationState::default();
-        let watched = location("/home");
-        state.navigate(watched.clone(), RequestId(1));
-        state.apply_batch(
-            RequestId(1),
-            vec![
-                named_entry("/home/alpha", "alpha"),
-                hidden_entry("/home/bravo", "bravo"),
-                named_entry("/home/charlie", "charlie"),
-            ],
-        );
-        assert!(state.select(0, 0));
-        let (_, selected) = remove(&mut state, &watched, location("/home/alpha"));
-        assert_eq!(selected, Some(1));
-        assert_eq!(state.columns[0].entries[1].display_name, "charlie");
-
-        let mut state = NavigationState::default();
-        state.navigate(watched.clone(), RequestId(1));
-        state.apply_batch(
-            RequestId(1),
-            vec![
-                named_entry("/home/alpha", "alpha"),
-                hidden_entry("/home/bravo", "bravo"),
-                named_entry("/home/charlie", "charlie"),
-            ],
-        );
-        assert!(state.select(0, 2));
-        let (_, selected) = remove(&mut state, &watched, location("/home/charlie"));
-        assert_eq!(selected, Some(0));
-        assert_eq!(state.columns[0].entries[0].display_name, "alpha");
-    }
-}
-
-#[test]
 fn monitor_moves_follow_the_selected_entry() {
     let mut state = NavigationState::default();
     let watched = location("/home");

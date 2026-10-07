@@ -275,7 +275,7 @@ cursor or **v** then motion → **y** / **x** → **h** / **l** / **g h** / **g 
 | **P** | Paste. Replace is focused on conflicts. **Ctrl+V** does the same. |
 | **Y** / **X** | Clear copy/cut marks and this process's clipboard payload. Does not wipe another application's clipboard. |
 | **d** / **Delete** | Move to Trash with confirmation; **d d** confirms |
-| **D** / **Shift+Delete** | Delete permanently with confirmation. Cancel is focused. |
+| **D** / **Shift+Delete** | Delete permanently with confirmation. Permanently delete is focused. |
 | **r** / **F2** | Rename the focused item in the footer prompt |
 | **a** | Create a file. A trailing `/` makes a folder (stripped before validation). Conflicts error instead of uniquifying. |
 | **o** / **O** | Open / Open With |
@@ -366,7 +366,7 @@ button does not choose it: nothing changes until you accept, and Cancel or
 
 **d** / **Delete** show a **Move to Trash?** confirmation with its confirm button
 focused; pressing **d** again confirms it, so **d d** trashes. **D** / **Shift+Delete**, and **d** inside Trash, show the permanent
-deletion confirmation with Cancel focused, so **Enter** cancels, and **d**
+deletion confirmation with its confirm button focused, so **Enter** confirms, and **d**
 there does nothing. Errors appear in
 the usual operation dialogs, and **Ctrl+Z** undoes what the default map can undo.
 
@@ -715,6 +715,10 @@ shows no hint. Default-map hints that are unbound or remapped (**Y** for copy pa
 
 Tabs use the same shortcuts in both modes: **Ctrl+T** creates a tab,
 **Ctrl+W** closes it, **Ctrl+Tab / Ctrl+Shift+Tab** cycles tabs, and
+**Ctrl+Page Up / Ctrl+Page Down** selects the previous / next tab, wrapping at
+either end.
+**Ctrl+Shift+Page Up / Ctrl+Shift+Page Down** moves the active tab left / right,
+stopping at either end of the strip.
 **Ctrl+Shift+1–9 / 0** selects a tab directly. Hold **Ctrl+Shift** to show tab
 numbers. See [browser tabs](keyboard-navigation.md#browser-tabs).
 

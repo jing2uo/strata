@@ -884,14 +884,16 @@ impl NavigationState {
             column.selected_locations.remove(location);
         }
         column.selected = if selected_was_removed {
-            if replace_selection && !column.entries.is_empty() {
-                let position = nearest_visible_neighbor(column, retained_before_selected);
-                if let Some(position) = position {
+            if replace_selection {
+                let replacement = column.visible_neighbor(retained_before_selected);
+                if !self.preserve_fill_on_removal
+                    && let Some(position) = replacement
+                {
                     column
                         .selected_locations
                         .insert(column.entries[position].location.clone());
                 }
-                position
+                replacement
             } else {
                 None
             }
@@ -963,7 +965,8 @@ impl NavigationState {
                 remove_monitored_entry(&mut column.entries, &location, &mut splices);
                 if selected_was_removed && replace_selection {
                     selected_location = removed_position.and_then(|position| {
-                        nearest_visible_neighbor(column, position)
+                        column
+                            .visible_neighbor(position)
                             .and_then(|index| column.entries.get(index))
                             .map(|entry| entry.location.clone())
                     });
@@ -2261,18 +2264,6 @@ fn visible_positions(column: &ColumnState) -> Vec<usize> {
         .collect()
 }
 
-/// Nearest visible entry at or after `position`, else the nearest one before
-/// it. Removals must use this instead of clamping the stale index, or focus
-/// and preview land on a hidden neighbor while hidden files are off.
-fn nearest_visible_neighbor(column: &ColumnState, position: usize) -> Option<usize> {
-    let visible = visible_positions(column);
-    visible
-        .iter()
-        .copied()
-        .find(|&index| index >= position)
-        .or_else(|| visible.last().copied())
-}
-
 fn selected_position_list(column: &ColumnState) -> Vec<usize> {
     if column.selected_locations.is_empty() {
         return Vec::new();
@@ -2298,6 +2289,14 @@ pub enum CursorToggle {
 }
 
 impl ColumnState {
+    fn visible_neighbor(&self, position: usize) -> Option<usize> {
+        let visible =
+            |&index: &usize| self.preferences.show_hidden || !self.entries[index].is_hidden;
+        (position..self.entries.len())
+            .find(visible)
+            .or_else(|| (0..position.min(self.entries.len())).rev().find(visible))
+    }
+
     fn invalidate_entry_indexes(&mut self) {
         self.entry_counts.set(None);
         self.metadata_positions = None;

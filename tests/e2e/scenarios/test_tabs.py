@@ -2,6 +2,7 @@
 """Live browser tabs, keyboard routing and cross-tab file transfers."""
 
 import pytest
+from gi.repository import Atspi
 
 from harness.interaction import MODIFIER_KEYSYMS
 from harness.modes import ALL_MODES
@@ -19,6 +20,47 @@ def selected_tab(strata, name):
         lambda: tab(strata, name).has_state("selected"),
         f"active tab {name}",
     )
+
+
+@pytest.mark.preferences(browser_mode="columns")
+def test_folder_click_keeps_tab_name_until_release_and_keyboard_focus_still_renames(strata):
+    parent = "documents"
+    strata.fixture.path("documents/alpha").mkdir()
+    strata.fixture.path("documents/beta").mkdir()
+    strata.keyboard.press("ctrl+t")
+    strata.keyboard.press("ctrl+l")
+    strata.keyboard.press("ctrl+a")
+    strata.keyboard.type_text(str(strata.fixture.path(parent)))
+    strata.keyboard.press("Return")
+    strata.wait_for_directory(parent)
+    strata.open_directory("alpha")
+    selected_tab(strata, "alpha")
+    scrollbar = strata.wait(
+        lambda: strata.window.find(role="scroll bar", states={"horizontal"}),
+        "column scrollbar",
+    )
+    value = Atspi.Accessible.get_value_iface(scrollbar.accessible)
+    assert Atspi.Value.set_current_value(value, 0.0)
+    target = strata.settle(strata.entry("beta", directory=parent))
+    origin = strata.pointer.drag_origin(target)
+    try:
+        strata.pointer.drag_points(origin, origin, release=False)
+        strata.settle(target)
+        strata.wait_for_selection(["beta"], parent)
+        assert strata.window.find(role="page tab", name="alpha", states={"selected"}) is not None
+        assert strata.window.find(role="page tab", name="beta") is None
+    finally:
+        strata.pointer.connection.button(1, False)
+    selected_tab(strata, "beta")
+    strata.wait_for_directory("beta")
+    strata.wait_for_selection([], "beta")
+    strata.keyboard.press("Left")
+    strata.wait(
+        lambda: strata.window.find(role="page tab", name=parent, states={"selected"}),
+        "parent tab name after deliberate keyboard focus",
+    )
+    strata.keyboard.press("Right")
+    selected_tab(strata, "beta")
 
 
 @pytest.mark.parametrize("tenxer", [
@@ -50,6 +92,47 @@ def test_tabs_keep_locations_and_support_numbered_shortcuts(strata, tenxer):
     strata.keyboard.press("ctrl+shift+Tab")
     selected_tab(strata, root)
     strata.keyboard.press("ctrl+shift+2")
+    selected_tab(strata, "archive")
+    strata.keyboard.press("ctrl+t")
+    strata.keyboard.press("alt+Up")
+    strata.wait_for_directory(root)
+    strata.open_directory("pictures")
+    selected_tab(strata, "pictures")
+    for shortcut, names in [
+        ("ctrl+Page_Up", ["archive", root, "pictures"]),
+        ("ctrl+Page_Down", [root, "archive", "pictures"]),
+    ]:
+        strata.keyboard.press("ctrl+l")
+        strata.wait(
+            lambda: strata.window.find(role="text", name="Location (Ctrl+L)", states={"focused"}),
+            "location editor to take focus",
+        )
+        for name in names:
+            strata.keyboard.press(shortcut)
+            selected_tab(strata, name)
+    for shortcut, order in [
+        ("ctrl+shift+Page_Up", [root, "pictures", "archive"]),
+        ("ctrl+shift+Page_Up", ["pictures", root, "archive"]),
+        ("ctrl+shift+Page_Up", ["pictures", root, "archive"]),
+        ("ctrl+shift+Page_Down", [root, "pictures", "archive"]),
+        ("ctrl+shift+Page_Down", [root, "archive", "pictures"]),
+        ("ctrl+shift+Page_Down", [root, "archive", "pictures"]),
+    ]:
+        strata.keyboard.press("ctrl+l")
+        field = strata.wait(
+            lambda: strata.window.find(role="text", name="Location (Ctrl+L)", states={"focused"}),
+            "location editor to take focus",
+        )
+        strata.keyboard.press(shortcut)
+        selected_tab(strata, "pictures")
+        strata.wait(lambda: field.has_state("focused"), "reordering to preserve location editor focus")
+        strata.keyboard.press("Escape")
+        for index, name in enumerate(order, start=1):
+            strata.keyboard.press(f"ctrl+shift+{index}")
+            selected_tab(strata, name)
+        strata.keyboard.press(f"ctrl+shift+{order.index('pictures') + 1}")
+        selected_tab(strata, "pictures")
+    strata.keyboard.press("ctrl+w")
     selected_tab(strata, "archive")
     strata.keyboard.press("ctrl+w")
     strata.wait_for_selection(["todo.txt"], root)
@@ -112,6 +195,10 @@ def test_dragging_tab_labels_changes_numbered_order(strata):
     strata.keyboard.press("ctrl+shift+2")
     selected_tab(strata, root)
     strata.keyboard.press("ctrl+shift+1")
+    selected_tab(strata, "archive")
+    strata.keyboard.press("ctrl+Page_Down")
+    selected_tab(strata, root)
+    strata.keyboard.press("ctrl+Page_Up")
     selected_tab(strata, "archive")
 
 
